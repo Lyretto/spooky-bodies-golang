@@ -1,0 +1,6 @@
+database:
+  host: db
+  port: "5432"
+  user: root
+  password: root
+  databaseName: spooky_bodies
