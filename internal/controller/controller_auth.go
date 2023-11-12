@@ -2,7 +2,6 @@ package controller
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/Lyretto/spooky-bodies-golang/internal/auth"
 	"github.com/Lyretto/spooky-bodies-golang/pkg/model"
@@ -15,7 +14,7 @@ import (
 
 type signUpParams struct {
 	PlatformType   model.PlatformType `gorm:"type:string" json:"platformType"`
-	PlatformUserID string             `gorm:"index:idx_platform_id_unique,unique" json:"platformUserId"`
+	PlatformUserID string             `json:"platformUserId"`
 }
 
 func authSignUp(db *gorm.DB) gin.HandlerFunc {
@@ -27,6 +26,7 @@ func authSignUp(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		//TODO platform type none only in develop environment
 		if signUpParams.PlatformType == model.PlatformNone {
 			signUpParams.PlatformUserID = uuid.NewString()
 		}
@@ -34,21 +34,19 @@ func authSignUp(db *gorm.DB) gin.HandlerFunc {
 		user := model.User{
 			PlatformType:   signUpParams.PlatformType,
 			PlatformUserID: signUpParams.PlatformUserID,
-			CreatedAt:      time.Now(),
-			IsMod:          false,
 		}
 
 		tx := db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			UpdateAll: true,
+			Columns:   []clause.Column{{Name: "platform_type"}, {Name: "platform_user_id"}},
+			DoNothing: true,
 		}).Create(&user)
 
-		if tx.Error == nil {
-			context.AbortWithStatus(http.StatusBadRequest)
+		if tx == nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": tx.Error})
 			return
 		}
 
-		context.JSON(http.StatusOK, gin.H{"platformUserID": user.PlatformUserID})
+		context.JSON(http.StatusOK, gin.H{"platformUserId": user.PlatformUserID})
 	}
 }
 
@@ -89,7 +87,6 @@ func UseAuth(router gin.IRouter, db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-
 	router.POST("/auth/signup", authSignUp(db))
 	router.POST("/auth/login", mw.LoginHandler)
 

@@ -49,7 +49,7 @@ type levelVoteParams struct {
 	VoteType model.VoteType `json:"voteType"`
 }
 
-func LevelsGetAll(db *gorm.DB) gin.HandlerFunc {
+func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		var getParams levelGetParams
 
@@ -71,7 +71,7 @@ func LevelsGetAll(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelsLockValidation(db *gorm.DB) gin.HandlerFunc {
+func levelsLockValidation(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 
 		//TODO: Lock level for validation (with timestamp 5 min), so multiple agents don't validate one level at the same time
@@ -80,7 +80,7 @@ func LevelsLockValidation(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
+func levelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -109,7 +109,7 @@ func LevelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelValidate(db *gorm.DB) gin.HandlerFunc {
+func levelValidate(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -173,7 +173,7 @@ func LevelValidate(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelsGetOwn(db *gorm.DB) gin.HandlerFunc {
+func levelsGetOwn(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -198,7 +198,7 @@ func LevelsGetOwn(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelsAdd(db *gorm.DB) gin.HandlerFunc {
+func levelsAdd(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -226,7 +226,7 @@ func LevelsAdd(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelsDelete(db *gorm.DB) gin.HandlerFunc {
+func levelsDelete(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -259,7 +259,7 @@ func LevelsDelete(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelsUpdate(db *gorm.DB) gin.HandlerFunc {
+func levelsUpdate(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -293,7 +293,7 @@ func LevelsUpdate(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelVote(db *gorm.DB) gin.HandlerFunc {
+func levelVote(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -337,7 +337,7 @@ func LevelVote(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelReport(db *gorm.DB) gin.HandlerFunc {
+func levelReport(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
@@ -375,4 +375,21 @@ func LevelReport(db *gorm.DB) gin.HandlerFunc {
 
 		context.JSON(http.StatusOK, gin.H{"reportID": report.ID})
 	}
+}
+
+func UseLevel(router gin.IRouter, db *gorm.DB) {
+	levelRouter := router.Group("/media")
+
+	levelRouter.GET("/levels", levelsGetAll(db))
+	levelRouter.GET("/levels/sus", levelsGetAllSus(db))
+	levelRouter.GET("/levels/own", levelsGetOwn(db))
+
+	levelRouter.DELETE("/levels/{levelId}", levelsDelete(db))
+
+	levelRouter.POST("/levels", levelsAdd(db))
+
+	levelRouter.PUT("/levels/{levelId}", levelsUpdate(db))
+	levelRouter.PUT("/levels/{levelId}/reports", levelReport(db))
+	levelRouter.PUT("/levels/{levelId}/vote", levelVote(db))
+	levelRouter.PUT("/levels/{levelId}/validate", levelValidate(db))
 }

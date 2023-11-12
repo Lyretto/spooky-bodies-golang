@@ -148,8 +148,7 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 			}
 
 			c.JSON(code, gin.H{
-				"userId": u.PlatformUserID,
-				"token":  jwtToken,
+				"token": jwtToken,
 			})
 		},
 		IdentityHandler: func(c *gin.Context) interface{} {
