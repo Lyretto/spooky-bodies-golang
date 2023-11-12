@@ -71,6 +71,15 @@ func LevelsGetAll(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func LevelsLockValidation(db *gorm.DB) gin.HandlerFunc {
+	return func(context *gin.Context) {
+
+		//TODO: Lock level for validation (with timestamp 5 min), so multiple agents don't validate one level at the same time
+
+		context.JSON(http.StatusOK, gin.H{})
+	}
+}
+
 func LevelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
