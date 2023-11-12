@@ -76,7 +76,7 @@ func LevelsLockValidation(db *gorm.DB) gin.HandlerFunc {
 
 		//TODO: Lock level for validation (with timestamp 5 min), so multiple agents don't validate one level at the same time
 
-		context.JSON(http.StatusOK, gin.H{})
+		context.Status(http.StatusOK)
 	}
 }
 
@@ -255,7 +255,7 @@ func LevelsDelete(db *gorm.DB) gin.HandlerFunc {
 			context.JSON(http.StatusNonAuthoritativeInfo, gin.H{"error": "not authorized to delete this level"})
 		}
 
-		context.JSON(http.StatusOK, gin.H{})
+		context.Status(http.StatusOK)
 	}
 }
 
@@ -289,7 +289,7 @@ func LevelsUpdate(db *gorm.DB) gin.HandlerFunc {
 			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 
-		context.JSON(http.StatusOK, gin.H{})
+		context.Status(http.StatusOK)
 	}
 }
 

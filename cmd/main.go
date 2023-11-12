@@ -70,6 +70,8 @@ func main() {
 
 	router.Use(cors.New(corsConfig))
 
+	controller.UseAuth(router, db)
+
 	router.GET("/levels", controller.LevelsGetAll(db))
 	router.GET("/levels/sus", controller.LevelsGetAllSus(db))
 	router.GET("/levels/own", controller.LevelsGetOwn(db))
