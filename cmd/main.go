@@ -71,11 +71,14 @@ func main() {
 	router.Use(cors.New(corsConfig))
 
 	router.GET("/levels", controller.LevelsGetAll(db))
+	router.GET("/levels/sus", controller.LevelsGetAllSus(db))
+	router.GET("/levels/own", controller.LevelsGetOwn(db))
 	router.POST("/levels", controller.LevelsAdd(db))
 	router.PUT("/levels/{levelId}", controller.LevelsUpdate(db))
 	router.DELETE("/levels/{levelId}", controller.LevelsDelete(db))
 	router.PUT("/levels/{levelId}/reports", controller.LevelReport(db))
-	router.PUT("/levels/{levelId}/votes", controller.LevelVote(db))
+	router.POST("/levels/{levelId}/votes", controller.LevelVote(db))
+	router.POST("/levels/{levelId}/validate", controller.LevelValidate(db))
 
 	router.Run("0.0.0.0:3000")
 }

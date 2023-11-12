@@ -164,7 +164,7 @@ func LevelValidate(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelGetOwn(db *gorm.DB) gin.HandlerFunc {
+func LevelsGetOwn(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
