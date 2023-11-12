@@ -16,6 +16,7 @@ type Database struct {
 
 type Config struct {
 	Database Database `mapstructure:"database"`
+	JWTKey   string   `mapstructure:"jwt_key"`
 }
 
 var C Config

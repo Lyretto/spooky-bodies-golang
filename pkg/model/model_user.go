@@ -12,6 +12,7 @@ type User struct {
 	ID             uuid.UUID    `gorm:"type:uuid;primary;default:gen_random_uuid()" json:"id"`
 	PlatformType   PlatformType `gorm:"type:string" json:"platformType"`
 	PlatformUserID string       `gorm:"index:idx_steam_id_unique,unique" json:"platformUserId"`
+	IsMod          bool         `gorm:"type:bool" json:"-"`
 }
 
 func (u *User) TableName() string {

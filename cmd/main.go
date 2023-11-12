@@ -38,6 +38,7 @@ func main() {
 		&model.User{},
 		&model.Level{},
 		&model.Vote{},
+		&model.Validation{},
 	)
 
 	// debug: ensure some user with uuid e97b3095-f92c-4d3e-a88b-25f2a4761c4a
@@ -69,6 +70,10 @@ func main() {
 
 	router.GET("/levels", controller.LevelsGetAll(db))
 	router.POST("/levels", controller.LevelsAdd(db))
+	router.PUT("/levels/{levelId}", controller.LevelsUpdate(db))
+	router.DELETE("/levels/{levelId}", controller.LevelsDelete(db))
+	router.PUT("/levels/{levelId}/reports", controller.LevelReport(db))
+	router.PUT("/levels/{levelId}/votes", controller.LevelVote(db))
 
 	router.Run("0.0.0.0:3000")
 }
