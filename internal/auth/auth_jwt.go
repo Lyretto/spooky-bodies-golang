@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type login struct {
+type loginParams struct {
 	PlatformType   model.PlatformType `json:"platformType"`
 	PlatformUserID string             `json:"username"`
 	PlatformToken  string             `json:"platfromToken"`
@@ -66,7 +66,7 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 		IdentityKey:      jwtIdentityKey,
 		TokenLookup:      "header: Authorization",
 		Authenticator: func(c *gin.Context) (interface{}, error) {
-			var loginParams login
+			var loginParams loginParams
 
 			if err := c.Bind(&loginParams); err != nil {
 				return "", jwt.ErrMissingLoginValues
@@ -148,7 +148,8 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 			}
 
 			c.JSON(code, gin.H{
-				"token": jwtToken,
+				"userId": u.PlatformUserID,
+				"token":  jwtToken,
 			})
 		},
 		IdentityHandler: func(c *gin.Context) interface{} {

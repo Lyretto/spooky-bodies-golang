@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/Lyretto/spooky-bodies-golang/internal/auth"
 	"github.com/Lyretto/spooky-bodies-golang/pkg/model"
@@ -29,6 +30,14 @@ type levelGetParams struct {
 
 type levelDeleteParams struct {
 	LevelID uuid.UUID `uri:"levelId" binding:"required,uuid"`
+}
+
+type levelValidateParams struct {
+	LevelID          uuid.UUID `uri:"levelId" binding:"required,uuid"`
+	Levelversion     int       `json:"version"`
+	ValidationResult string    `json:"result"`
+	AuthorScore      int       `json:"authorScore"`
+	Thumbnail        []uint8   `json:"thumbnail"`
 }
 
 type levelReportParams struct {
@@ -67,7 +76,7 @@ func LevelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
 		user := auth.GetJWTUser(context)
 
 		if !user.IsMod {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "no moderation authorization")})
+			context.JSON(http.StatusUnauthorized, gin.H{"error": "no moderation authorization"})
 			return
 		}
 
@@ -91,31 +100,66 @@ func LevelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func LevelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
+func LevelValidate(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
 		if !user.IsMod {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "no moderation authorization")})
+			context.JSON(http.StatusUnauthorized, gin.H{"error": "no moderation authorization"})
 			return
 		}
 
-		var getParams levelGetParams
+		var validateParams levelValidateParams
 
-		if err := context.BindJSON(&getParams); err != nil {
+		if err := context.BindUri(&validateParams); err != nil {
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		levels := []model.Level{}
+		if err := context.BindJSON(&validateParams); err != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
-		if err := db.Preload(clause.Associations).Offset(getParams.Offset).Limit(getParams.Limit).Find(&levels); err != nil {
-			context.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		var level model.Level
+		tx := db.Where("id = ?", user.ID, validateParams.LevelID).First(&level)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusNotFound, gin.H{"error": tx.Error})
+			return
+		}
+
+		validation := model.Validation{
+			LevelID:      validateParams.LevelID,
+			LevelVersion: level.Version,
+			Result:       validateParams.ValidationResult,
+			ValidatorID:  user.ID,
+		}
+
+		tx = db.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "version"}, {Name: "levelId"}},
+			UpdateAll: true,
+		}).Create(&validation)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusInternalServerError, gin.H{"error": tx.Error})
+			return
+		}
+
+		level.ValidationId = validation.ID
+		level.AuthorScore = validateParams.AuthorScore
+		level.Thumbnail = validateParams.Thumbnail
+		level.Published = time.Now()
+
+		tx = db.Save(&level)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusInternalServerError, gin.H{"error": tx.Error})
 			return
 		}
 
 		context.JSON(http.StatusOK, gin.H{
-			"results": levels,
+			"validationId": validation.ID,
 		})
 	}
 }
@@ -271,7 +315,7 @@ func LevelVote(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		tx = db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
+			Columns:   []clause.Column{{Name: "userId"}, {Name: "levelId"}},
 			UpdateAll: true,
 		}).Create(&vote)
 
@@ -309,7 +353,7 @@ func LevelReport(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		tx = db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
+			Columns:   []clause.Column{{Name: "userId"}, {Name: "levelId"}},
 			UpdateAll: true,
 		}).Create(&report)
 

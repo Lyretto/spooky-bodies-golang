@@ -39,6 +39,8 @@ func main() {
 		&model.Level{},
 		&model.Vote{},
 		&model.Validation{},
+		&model.Report{},
+		&model.UserToken{},
 	)
 
 	// debug: ensure some user with uuid e97b3095-f92c-4d3e-a88b-25f2a4761c4a

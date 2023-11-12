@@ -12,6 +12,7 @@ const ResultContentTooComplex = ResultType("content-complex")
 type Validation struct {
 	ID           uuid.UUID  `gorm:"type:uuid;primary;default:gen_random_uuid()" json:"id"`
 	ValidatorID  uuid.UUID  `gorm:"type:uuid" json:"validatorUserId"`
+	UserID       uuid.UUID  `gorm:"type:uuid" json:"userId"`
 	User         *User      `json:"-"`
 	LevelID      uuid.UUID  `gorm:"type:uuid" json:"levelId"`
 	Level        *Level     `json:"-"`
