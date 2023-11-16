@@ -4,3 +4,5 @@ database:
   user: root
   password: root
   databaseName: spooky_bodies
+TokenLifeSpan: 1
+JWTKey: eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MDAwNzYwNjcsIm9yaWdfaWF0IjoxNzAwMDcyNDY3LCJ1c2

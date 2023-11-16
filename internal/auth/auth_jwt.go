@@ -10,12 +10,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type loginParams struct {
 	PlatformType   model.PlatformType `json:"platformType"`
-	PlatformUserID string             `json:"username"`
-	PlatformToken  string             `json:"platfromToken"`
+	PlatformUserID string             `json:"platformUserId"`
 }
 
 var jwtIdentityKey = "userId"
@@ -74,24 +74,40 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 
 			var user model.User
 
-			tx := db.Where(&model.User{PlatformType: loginParams.PlatformType, PlatformUserID: loginParams.PlatformUserID}).Find(&user)
+			tx := db.Where(&model.User{PlatformType: loginParams.PlatformType, PlatformUserID: loginParams.PlatformUserID}).Limit(1).Find(&user)
 
 			if tx.Error != nil {
-				return nil, jwt.ErrFailedAuthentication
+				return nil, tx.Error
 			}
 
-			switch user.PlatformType {
+			switch loginParams.PlatformType {
 			case model.PlatformSteam:
 				return nil, jwt.ErrFailedAuthentication
 			case model.PlatformNintendo:
 				return nil, jwt.ErrFailedAuthentication
 			case model.PlatformNone:
-				c.Set("user", user)
+				if tx.RowsAffected == 0 {
+					user = model.User{
+						PlatformType:   loginParams.PlatformType,
+						PlatformUserID: loginParams.PlatformUserID,
+					}
+
+					tx = db.Where("platform_type = ?", loginParams.PlatformType).Clauses(clause.OnConflict{
+						Columns:   []clause.Column{{Name: "platform_user_id"}},
+						DoNothing: true,
+					}).Create(&user)
+
+					if tx.Error != nil {
+						return nil, tx.Error
+					}
+				}
+
+				c.Set("user", &user)
 			default:
 				return nil, jwt.ErrFailedAuthentication
 			}
 
-			return user, nil
+			return &user, nil
 		},
 		PayloadFunc: func(data interface{}) jwt.MapClaims {
 			if v, ok := data.(*model.User); ok {
@@ -125,14 +141,18 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 			user, userExists := c.Get("user")
 
 			if !userExists {
-				c.AbortWithStatus(http.StatusUnauthorized)
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "user not found",
+				})
 				return
 			}
 
 			u, ok := user.(*model.User)
 
 			if !ok {
-				c.AbortWithStatus(http.StatusUnauthorized)
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "user error",
+				})
 				return
 			}
 
@@ -143,7 +163,9 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 			}
 
 			if err := db.Save(&userToken).Error; err != nil {
-				c.AbortWithStatus(http.StatusUnauthorized)
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "token could not be persisted",
+				})
 				return
 			}
 
@@ -162,7 +184,7 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 				return nil
 			}
 
-			return user
+			return &user
 		},
 	})
 }

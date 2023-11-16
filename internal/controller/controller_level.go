@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -24,8 +25,8 @@ type levelUpdateParams struct {
 }
 
 type levelGetParams struct {
-	Offset int `json:"offset"`
-	Limit  int `json:"limit"`
+	Offset int `query:"offset"`
+	Limit  int `query:"limit"`
 }
 
 type levelDeleteParams struct {
@@ -35,6 +36,7 @@ type levelDeleteParams struct {
 type levelValidateParams struct {
 	LevelID          uuid.UUID `uri:"levelId" binding:"required,uuid"`
 	Levelversion     int       `json:"version"`
+	Content          string    `json:"content"`
 	ValidationResult string    `json:"result"`
 	AuthorScore      int       `json:"authorScore"`
 	Thumbnail        []uint8   `json:"thumbnail"`
@@ -53,20 +55,42 @@ func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		var getParams levelGetParams
 
-		if err := context.BindJSON(&getParams); err != nil {
+		if err := context.BindQuery(&getParams); err != nil {
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
 		levels := []model.Level{}
 
-		if err := db.Where("validationId != nil").Joins("JOIN validations ON validation.levelId = level.id AND validation.result = ?", model.ResultOk).Preload(clause.Associations).Offset(getParams.Offset).Limit(getParams.Limit).Find(&levels); err != nil {
-			context.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		var levelCount int64
+
+		tx := db.
+			Model(&model.Level{}).
+			Preload(clause.Associations).
+			Where("validation_id is not null").
+			Joins("JOIN "+((&model.Validation{}).TableName())+" v ON v.level_id = "+((&model.Level{}).TableName())+".id AND v.result = ?", model.ResultOk)
+
+		tx.Count(&levelCount)
+
+		retrieveTx := tx.Offset(getParams.Offset).
+			Limit(getParams.Limit).
+			Find(&levels)
+
+		err := retrieveTx.Error
+
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				context.Status(http.StatusNotFound)
+				return
+			}
+
+			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
 		context.JSON(http.StatusOK, gin.H{
-			"results": levels,
+			"levels": levels,
+			"total":  levelCount,
 		})
 	}
 }
@@ -98,13 +122,33 @@ func levelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
 
 		levels := []model.Level{}
 
-		if err := db.Where("validationId = nil").Preload(clause.Associations).Offset(getParams.Offset).Limit(getParams.Limit).Find(&levels); err != nil {
-			context.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		var levelCount int64
+
+		tx := db.
+			Model(&model.Level{}).
+			Preload(clause.Associations).
+			Where("validation_id is null")
+
+		tx.Count(&levelCount)
+
+		retrieveTx := tx.Offset(getParams.Offset).
+			Limit(getParams.Limit).
+			Find(&levels)
+
+		err := retrieveTx.Error
+
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				context.Status(http.StatusNotFound)
+				return
+			}
+
+			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
 		context.JSON(http.StatusOK, gin.H{
-			"results": levels,
+			"levels": levels,
 		})
 	}
 }
@@ -138,6 +182,10 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// cleanup content json
+		level.Content = validateParams.Content
+		db.Save(level)
+
 		validation := model.Validation{
 			LevelID:      validateParams.LevelID,
 			LevelVersion: level.Version,
@@ -146,7 +194,7 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		tx = db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "version"}, {Name: "levelId"}},
+			Columns:   []clause.Column{{Name: "version"}, {Name: "level_id"}},
 			UpdateAll: true,
 		}).Create(&validation)
 
@@ -184,16 +232,36 @@ func levelsGetOwn(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		tx := db.Where("userId = ?", user.ID)
-
 		levels := []model.Level{}
-		if err := tx.Preload(clause.Associations).Offset(getParams.Offset).Limit(getParams.Limit).Find(&levels); err != nil {
-			context.JSON(http.StatusInternalServerError, gin.H{"error": err})
+
+		var levelCount int64
+
+		tx := db.
+			Model(&model.Level{}).
+			Preload(clause.Associations).
+			Where("user_id = ?", user.ID)
+
+		tx.Count(&levelCount)
+
+		retrieveTx := tx.Offset(getParams.Offset).
+			Limit(getParams.Limit).
+			Find(&levels)
+
+		err := retrieveTx.Error
+
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				context.Status(http.StatusNotFound)
+				return
+			}
+
+			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
 		context.JSON(http.StatusOK, gin.H{
-			"results": levels,
+			"levels": levels,
+			"total":  levelCount,
 		})
 	}
 }
@@ -244,7 +312,7 @@ func levelsDelete(db *gorm.DB) gin.HandlerFunc {
 		tx := db
 
 		if !user.IsMod {
-			tx = tx.Where("userId = ?", user.ID)
+			tx = tx.Where("user_id = ?", user.ID)
 		}
 
 		tx = tx.First(&level)
@@ -310,7 +378,7 @@ func levelVote(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var level model.Level
-		tx := db.Limit(1).Where("userid!=? AND id = ?", user.ID, voteParams.LevelID).Find(&level)
+		tx := db.Limit(1).Where("user_id!=? AND id = ?", user.ID, voteParams.LevelID).Find(&level)
 
 		if tx.Error != nil {
 			context.JSON(http.StatusNotFound, gin.H{"error": "level not found"})
@@ -324,7 +392,7 @@ func levelVote(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		tx = db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "userId"}, {Name: "levelId"}},
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "level_id"}},
 			UpdateAll: true,
 		}).Create(&vote)
 
@@ -349,7 +417,7 @@ func levelReport(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var level model.Level
-		tx := db.Where("userid != ? AND id = ?", user.ID, reportParams.LevelID).First(&level)
+		tx := db.Where("user_id != ? AND id = ?", user.ID, reportParams.LevelID).First(&level)
 
 		if tx.Error != nil {
 			context.JSON(http.StatusNotFound, gin.H{"error": "level not found"})
@@ -378,18 +446,18 @@ func levelReport(db *gorm.DB) gin.HandlerFunc {
 }
 
 func UseLevel(router gin.IRouter, db *gorm.DB) {
-	levelRouter := router.Group("/media")
+	levelRouter := router.Group("/levels")
 
-	levelRouter.GET("/levels", levelsGetAll(db))
-	levelRouter.GET("/levels/sus", levelsGetAllSus(db))
-	levelRouter.GET("/levels/own", levelsGetOwn(db))
+	levelRouter.GET("", levelsGetAll(db))
+	levelRouter.GET("/sus", levelsGetAllSus(db))
+	levelRouter.GET("/own", levelsGetOwn(db))
 
-	levelRouter.DELETE("/levels/{levelId}", levelsDelete(db))
+	levelRouter.DELETE("/{levelId}", levelsDelete(db))
 
-	levelRouter.POST("/levels", levelsAdd(db))
+	levelRouter.POST("", levelsAdd(db))
 
-	levelRouter.PUT("/levels/{levelId}", levelsUpdate(db))
-	levelRouter.PUT("/levels/{levelId}/reports", levelReport(db))
-	levelRouter.PUT("/levels/{levelId}/vote", levelVote(db))
-	levelRouter.PUT("/levels/{levelId}/validate", levelValidate(db))
+	levelRouter.PUT("/{levelId}", levelsUpdate(db))
+	levelRouter.PUT("/{levelId}/reports", levelReport(db))
+	levelRouter.PUT("/{levelId}/vote", levelVote(db))
+	levelRouter.PUT("/{levelId}/validate", levelValidate(db))
 }

@@ -2,22 +2,24 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/Lyretto/spooky-bodies-golang/internal/config"
 	"github.com/Lyretto/spooky-bodies-golang/internal/controller"
 	"github.com/Lyretto/spooky-bodies-golang/pkg/model"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func main() {
 	fmt.Println("hello from spooky bodies server!")
 
 	config.Init()
+
+	os.Setenv("TOKEN_HOUR_LIFESPAN", strconv.Itoa(config.C.TokenLifeSpan))
 
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Europe/Berlin",
@@ -42,23 +44,6 @@ func main() {
 		&model.Report{},
 		&model.UserToken{},
 	)
-
-	// debug: ensure some user with uuid e97b3095-f92c-4d3e-a88b-25f2a4761c4a
-
-	debugUser := model.User{
-		ID:             uuid.MustParse("e97b3095-f92c-4d3e-a88b-25f2a4761c4a"),
-		PlatformType:   model.PlatformSteam,
-		PlatformUserID: "debug-platform-user-id",
-	}
-
-	tx := db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "id"}},
-		UpdateAll: true,
-	}).Create(&debugUser)
-
-	if tx.Error != nil {
-		panic(tx.Error)
-	}
 
 	router := gin.New()
 
