@@ -15,7 +15,7 @@ type Validation struct {
 	UserID       uuid.UUID  `gorm:"type:uuid" json:"userId"`
 	User         *User      `json:"-"`
 	LevelID      uuid.UUID  `gorm:"type:uuid" json:"levelId"`
-	Level        *Level     `json:"-"`
+	Level        Level      `json:"-"`
 	LevelVersion uint       `json:"version"`
 	Result       ResultType `gorm:"type:string" json:"result"`
 }

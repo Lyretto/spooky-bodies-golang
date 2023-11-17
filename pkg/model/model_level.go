@@ -15,7 +15,7 @@ type Level struct {
 	AuthorReplay string      `json:"replay"`
 	Thumbnail    []uint8     `json:"image"`
 	ValidationId uuid.UUID   `json:"-"`
-	Validation   *Validation `json:"-"`
+	Validation   *Validation `json:"validation"`
 	Version      uint        `json:"version"`
 	Reports      uint        `json:"-"`
 	Published    time.Time   `json:"published"`
