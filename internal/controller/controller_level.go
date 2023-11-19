@@ -13,41 +13,26 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type levelAddParams struct {
+type levelParams struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
 }
 
-type levelUpdateParams struct {
-	LevelID uuid.UUID `uri:"levelId" binding:"required,uuid"`
-	Name    string    `json:"name"`
-	Content string    `json:"content"`
-}
-
 type levelGetParams struct {
-	Offset int `query:"offset"`
-	Limit  int `query:"limit"`
-}
-
-type levelDeleteParams struct {
-	LevelID uuid.UUID `uri:"levelId" binding:"required,uuid"`
+	Offset  int `form:"offset"`
+	Limit   int `form:"limit"`
+	OnlySus int `form:"only_sus"`
 }
 
 type levelValidateParams struct {
-	LevelID          uuid.UUID `uri:"levelId" binding:"required,uuid"`
-	Levelversion     int       `json:"version"`
-	Content          string    `json:"content"`
-	ValidationResult string    `json:"result"`
-	AuthorScore      int       `json:"authorScore"`
-	Thumbnail        []uint8   `json:"thumbnail"`
-}
-
-type levelReportParams struct {
-	LevelID uuid.UUID `uri:"levelId" binding:"required,uuid"`
+	Levelversion     int     `json:"version"`
+	Content          string  `json:"content"`
+	ValidationResult string  `json:"result"`
+	AuthorScore      int     `json:"authorScore"`
+	Thumbnail        []uint8 `json:"thumbnail"`
 }
 
 type levelVoteParams struct {
-	LevelID  uuid.UUID      `uri:"levelId" binding:"required,uuid"`
 	VoteType model.VoteType `json:"voteType"`
 }
 
@@ -63,20 +48,43 @@ func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 		levels := []model.Level{}
 
 		var levelCount int64
+		var err error
 
-		tx := db.
-			Model(&model.Level{}).
-			Preload(clause.Associations).
-			Where("validation_id is not null").
-			Joins("JOIN "+((&model.Validation{}).TableName())+" v ON v.level_id = "+((&model.Level{}).TableName())+".id AND v.result = ?", model.ResultOk)
+		user := auth.GetJWTUser(context)
 
-		tx.Count(&levelCount)
+		if user.Role == model.UserRoleMod || user.Role == model.UserRoleAgent {
+			tx := db.Model(&model.Level{}).Preload(clause.Associations)
 
-		retrieveTx := tx.Offset(getParams.Offset).
-			Limit(getParams.Limit).
-			Find(&levels)
+			if getParams.OnlySus == 1 {
+				tx = tx.Where("validation_id is null")
+			}
 
-		err := retrieveTx.Error
+			if user.Role == model.UserRoleAgent {
+				tx = tx.Where("validation_lock is null OR validation_lock < ?", time.Now().Add(time.Minute*15))
+			}
+
+			tx.Count(&levelCount)
+
+			retrieveTx := tx.Offset(getParams.Offset).
+				Limit(getParams.Limit).
+				Find(&levels)
+
+			err = retrieveTx.Error
+		} else {
+			tx := db.
+				Model(&model.Level{}).
+				Preload(clause.Associations).
+				Where("validation_id is not null").
+				Joins("JOIN "+((&model.Validation{}).TableName())+" v ON v.level_id = "+((&model.Level{}).TableName())+".id AND v.result = ?", model.ResultOk)
+
+			tx.Count(&levelCount)
+
+			retrieveTx := tx.Offset(getParams.Offset).
+				Limit(getParams.Limit).
+				Find(&levels)
+
+			err = retrieveTx.Error
+		}
 
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -95,70 +103,19 @@ func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func levelsLockValidation(db *gorm.DB) gin.HandlerFunc {
-	return func(context *gin.Context) {
-
-		//TODO: Lock level for validation (with timestamp 5 min), so multiple agents don't validate one level at the same time
-
-		context.Status(http.StatusOK)
-	}
-}
-
-func levelsGetAllSus(db *gorm.DB) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		user := auth.GetJWTUser(context)
-
-		if !user.IsMod {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "no moderation authorization"})
-			return
-		}
-
-		var getParams levelGetParams
-
-		if err := context.BindJSON(&getParams); err != nil {
-			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		levels := []model.Level{}
-
-		var levelCount int64
-
-		tx := db.
-			Model(&model.Level{}).
-			Preload(clause.Associations).
-			Where("validation_id is null")
-
-		tx.Count(&levelCount)
-
-		retrieveTx := tx.Offset(getParams.Offset).
-			Limit(getParams.Limit).
-			Find(&levels)
-
-		err := retrieveTx.Error
-
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				context.Status(http.StatusNotFound)
-				return
-			}
-
-			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		context.JSON(http.StatusOK, gin.H{
-			"levels": levels,
-		})
-	}
-}
-
 func levelValidate(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
-		if !user.IsMod {
+		if user.Role != model.UserRoleMod && user.Role != model.UserRoleAgent {
 			context.JSON(http.StatusUnauthorized, gin.H{"error": "no moderation authorization"})
+			return
+		}
+
+		levelID, err := uuid.Parse(context.Param("levelId"))
+
+		if err != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -175,19 +132,16 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var level model.Level
-		tx := db.Where("id = ?", user.ID, validateParams.LevelID).First(&level)
+
+		tx := db.Where("id = ?", user.ID, levelID).First(&level)
 
 		if tx.Error != nil {
 			context.JSON(http.StatusNotFound, gin.H{"error": tx.Error})
 			return
 		}
 
-		// cleanup content json
-		level.Content = validateParams.Content
-		db.Save(level)
-
 		validation := model.Validation{
-			LevelID:      validateParams.LevelID,
+			LevelID:      levelID,
 			LevelVersion: level.Version,
 			Result:       validateParams.ValidationResult,
 			ValidatorID:  user.ID,
@@ -203,10 +157,25 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		level.ValidationId = validation.ID
+		if level.Validation != nil {
+			tx = db.Delete(&level.Validation)
+
+			if tx.Error != nil {
+				/*
+					TODO: Old validation could not be deleted, would should happen ?
+
+					context.JSON(http.StatusInternalServerError, gin.H{"error": tx.Error})
+					return
+				*/
+			}
+		}
+
+		level.Content = validateParams.Content
+		level.ValidationId = &validation.ID
 		level.AuthorScore = validateParams.AuthorScore
 		level.Thumbnail = validateParams.Thumbnail
 		level.Published = time.Now()
+		level.Version += 1
 
 		tx = db.Save(&level)
 
@@ -227,7 +196,7 @@ func levelsGetOwn(db *gorm.DB) gin.HandlerFunc {
 
 		var getParams levelGetParams
 
-		if err := context.BindJSON(&getParams); err != nil {
+		if err := context.BindQuery(&getParams); err != nil {
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -270,7 +239,7 @@ func levelsAdd(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
-		var levelAddParams levelAddParams
+		var levelAddParams levelParams
 
 		if err := context.BindJSON(&levelAddParams); err != nil {
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -298,20 +267,20 @@ func levelsDelete(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
-		var deleteParams levelDeleteParams
+		levelID, err := uuid.Parse(context.Param("levelId"))
 
-		if err := context.BindUri(&deleteParams); err != nil {
+		if err != nil {
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
 		level := model.Level{
-			ID: deleteParams.LevelID,
+			ID: levelID,
 		}
 
 		tx := db
 
-		if !user.IsMod {
+		if user.Role != model.UserRoleMod && user.Role != model.UserRoleAgent {
 			tx = tx.Where("user_id = ?", user.ID)
 		}
 
@@ -327,13 +296,64 @@ func levelsDelete(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+func lockLevelValidation(db *gorm.DB) gin.HandlerFunc {
+	return func(context *gin.Context) {
+		user := auth.GetJWTUser(context)
+
+		if user.Role == model.UserRoleAgent {
+			context.JSON(http.StatusBadRequest, gin.H{"error": "Not authorized to lock validation for level"})
+			return
+		}
+
+		levelID, err := uuid.Parse(context.Param("levelId"))
+
+		if err != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		var level model.Level
+
+		tx := db.Where("id = ?", levelID).First(&level)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if level.Validation != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": "level is already validated"})
+			return
+		}
+
+		if level.ValidationLock.Before(time.Now().Add(time.Minute*15)) && user.ID != *level.ValidationAgentID {
+			context.JSON(http.StatusBadRequest, gin.H{"error": "is in lock by another agent"})
+			return
+		}
+
+		level.ValidationLock = time.Now()
+		level.ValidationAgentID = &user.ID
+
+		tx = db.Save(level)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		context.Status(http.StatusOK)
+	}
+}
+
 func levelsUpdate(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
-		var updateParams levelUpdateParams
+		var updateParams levelParams
 
-		if err := context.BindUri(&updateParams); err != nil {
+		levelID, err := uuid.Parse(context.Param("levelId"))
+
+		if err != nil {
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -343,18 +363,23 @@ func levelsUpdate(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		level := model.Level{
-			ID:      updateParams.LevelID,
-			UserID:  user.ID,
-			Name:    updateParams.Name,
-			Content: updateParams.Content,
+		var level model.Level
+
+		tx := db.Where("user_id = ? AND id = ?", user.ID, levelID).First(&level)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 
-		if err := db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "user_id"}, {Name: "level_id"}},
-			UpdateAll: true,
-		}).Create(&level).Error; err != nil {
+		level.Name = updateParams.Name
+		level.Content = updateParams.Content
+
+		tx = db.Save(&level)
+
+		if tx.Error != nil {
 			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
 		context.Status(http.StatusOK)
@@ -364,6 +389,13 @@ func levelsUpdate(db *gorm.DB) gin.HandlerFunc {
 func levelVote(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
+
+		levelID, err := uuid.Parse(context.Param("levelId"))
+
+		if err != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
 		var voteParams levelVoteParams
 
@@ -378,7 +410,7 @@ func levelVote(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var level model.Level
-		tx := db.Limit(1).Where("user_id!=? AND id = ?", user.ID, voteParams.LevelID).Find(&level)
+		tx := db.Limit(1).Where("user_id!=? AND id = ?", user.ID, levelID).Find(&level)
 
 		if tx.Error != nil {
 			context.JSON(http.StatusNotFound, gin.H{"error": "level not found"})
@@ -409,15 +441,15 @@ func levelReport(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
-		var reportParams levelReportParams
+		levelID, err := uuid.Parse(context.Param("levelId"))
 
-		if err := context.BindJSON(&reportParams); err != nil {
+		if err != nil {
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
 		var level model.Level
-		tx := db.Where("user_id != ? AND id = ?", user.ID, reportParams.LevelID).First(&level)
+		tx := db.Where("user_id != ? AND id = ?", user.ID, levelID).First(&level)
 
 		if tx.Error != nil {
 			context.JSON(http.StatusNotFound, gin.H{"error": "level not found"})
@@ -441,7 +473,7 @@ func levelReport(db *gorm.DB) gin.HandlerFunc {
 
 		// TODO: Update Validation of level when reports above threshold
 
-		context.JSON(http.StatusOK, gin.H{"reportID": report.ID})
+		context.JSON(http.StatusOK, gin.H{"reportId": report.ID})
 	}
 }
 
@@ -449,15 +481,15 @@ func UseLevel(router gin.IRouter, db *gorm.DB) {
 	levelRouter := router.Group("/levels")
 
 	levelRouter.GET("", levelsGetAll(db))
-	levelRouter.GET("/sus", levelsGetAllSus(db))
-	levelRouter.GET("/own", levelsGetOwn(db))
+	//levelRouter.GET("/sus", levelsGetAllSus(db))
+	router.GET("me/levels", levelsGetOwn(db))
 
-	levelRouter.DELETE("/{levelId}", levelsDelete(db))
+	levelRouter.DELETE("/:levelId", levelsDelete(db))
 
 	levelRouter.POST("", levelsAdd(db))
 
-	levelRouter.PUT("/{levelId}", levelsUpdate(db))
-	levelRouter.PUT("/{levelId}/reports", levelReport(db))
-	levelRouter.PUT("/{levelId}/vote", levelVote(db))
-	levelRouter.PUT("/{levelId}/validate", levelValidate(db))
+	levelRouter.PUT("/:levelId", levelsUpdate(db))
+	levelRouter.PUT("/:levelId/reports", levelReport(db))
+	levelRouter.PUT("/:levelId/vote", levelVote(db))
+	levelRouter.PUT("/:levelId/validate", levelValidate(db))
 }
