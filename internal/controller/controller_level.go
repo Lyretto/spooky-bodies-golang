@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Lyretto/spooky-bodies-golang/internal/auth"
+	"github.com/Lyretto/spooky-bodies-golang/internal/config"
 	"github.com/Lyretto/spooky-bodies-golang/pkg/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -52,7 +53,7 @@ func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 
 		user := auth.GetJWTUser(context)
 
-		if user.Role == model.UserRoleMod || user.Role == model.UserRoleAgent {
+		if config.C.Environment != config.EnvironmentProduction || user.Role == model.UserRoleMod || user.Role == model.UserRoleAgent {
 			tx := db.Model(&model.Level{}).Preload(clause.Associations)
 
 			if getParams.OnlySus == 1 {
@@ -60,7 +61,7 @@ func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 			}
 
 			if user.Role == model.UserRoleAgent {
-				tx = tx.Where("validation_lock is null OR validation_lock < ?", time.Now().Add(time.Minute*15))
+				tx = tx.Where("validation_lock is null OR validation_lock < ?", time.Now().Add(time.Minute*time.Duration(config.C.TokenLifeSpan)))
 			}
 
 			tx.Count(&levelCount)
@@ -326,7 +327,7 @@ func lockLevelValidation(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if level.ValidationLock.Before(time.Now().Add(time.Minute*15)) && user.ID != *level.ValidationAgentID {
+		if level.ValidationLock.Before(time.Now().Add(time.Minute*time.Duration(config.C.TokenLifeSpan))) && user.ID != *level.ValidationAgentID {
 			context.JSON(http.StatusBadRequest, gin.H{"error": "is in lock by another agent"})
 			return
 		}

@@ -6,6 +6,11 @@ import (
 	"github.com/spf13/viper"
 )
 
+type Environment = string
+
+const EnvironmentDevelop = Environment("develop")
+const EnvironmentProduction = Environment("production")
+
 type Database struct {
 	Host         string `mapstructure:"host"`
 	Port         string `mapstructure:"port"`
@@ -15,9 +20,10 @@ type Database struct {
 }
 
 type Config struct {
-	Database      Database `mapstructure:"database"`
-	JWTKey        string   `mapstructure:"jwt_key"`
-	TokenLifeSpan int      `mapstructure:"TokenLifeSpan"`
+	Database      Database    `mapstructure:"database"`
+	JWTKey        string      `mapstructure:"jwt_key"`
+	TokenLifeSpan int         `mapstructure:"TokenLifeSpan"`
+	Environment   Environment `mapstructure:"Environment"`
 }
 
 var C Config
