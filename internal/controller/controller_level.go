@@ -52,11 +52,15 @@ func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 
 		user := auth.GetJWTUser(context)
 
-		if user.IsMod {
+		if user.Role == model.UserRoleMod || user.Role == model.UserRoleAgent {
 			tx := db.Model(&model.Level{}).Preload(clause.Associations)
 
 			if getParams.OnlySus == 1 {
 				tx = tx.Where("validation_id is null")
+			}
+
+			if user.Role == model.UserRoleAgent {
+				tx = tx.Where("validation_lock is null OR validation_lock < ?", time.Now().Add(time.Minute*15))
 			}
 
 			tx.Count(&levelCount)
@@ -99,20 +103,11 @@ func levelsGetAll(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func levelsLockValidation(db *gorm.DB) gin.HandlerFunc {
-	return func(context *gin.Context) {
-
-		//TODO: Lock level for validation (with timestamp 5 min), so multiple agents don't validate one level at the same time
-
-		context.Status(http.StatusOK)
-	}
-}
-
 func levelValidate(db *gorm.DB) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		user := auth.GetJWTUser(context)
 
-		if !user.IsMod {
+		if user.Role != model.UserRoleMod && user.Role != model.UserRoleAgent {
 			context.JSON(http.StatusUnauthorized, gin.H{"error": "no moderation authorization"})
 			return
 		}
@@ -137,6 +132,7 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var level model.Level
+
 		tx := db.Where("id = ?", user.ID, levelID).First(&level)
 
 		if tx.Error != nil {
@@ -144,12 +140,8 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// cleanup content json
-		level.Content = validateParams.Content
-		db.Save(level)
-
 		validation := model.Validation{
-			//LevelID:      validateParams.LevelID,
+			LevelID:      levelID,
 			LevelVersion: level.Version,
 			Result:       validateParams.ValidationResult,
 			ValidatorID:  user.ID,
@@ -165,10 +157,25 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		//level.ValidationId = validation.ID
+		if level.Validation != nil {
+			tx = db.Delete(&level.Validation)
+
+			if tx.Error != nil {
+				/*
+					TODO: Old validation could not be deleted, would should happen ?
+
+					context.JSON(http.StatusInternalServerError, gin.H{"error": tx.Error})
+					return
+				*/
+			}
+		}
+
+		level.Content = validateParams.Content
+		level.ValidationId = &validation.ID
 		level.AuthorScore = validateParams.AuthorScore
 		level.Thumbnail = validateParams.Thumbnail
 		level.Published = time.Now()
+		level.Version += 1
 
 		tx = db.Save(&level)
 
@@ -273,7 +280,7 @@ func levelsDelete(db *gorm.DB) gin.HandlerFunc {
 
 		tx := db
 
-		if !user.IsMod {
+		if user.Role != model.UserRoleMod && user.Role != model.UserRoleAgent {
 			tx = tx.Where("user_id = ?", user.ID)
 		}
 
@@ -283,6 +290,55 @@ func levelsDelete(db *gorm.DB) gin.HandlerFunc {
 			db.Delete(&level)
 		} else {
 			context.JSON(http.StatusNonAuthoritativeInfo, gin.H{"error": "not authorized to delete this level"})
+		}
+
+		context.Status(http.StatusOK)
+	}
+}
+
+func lockLevelValidation(db *gorm.DB) gin.HandlerFunc {
+	return func(context *gin.Context) {
+		user := auth.GetJWTUser(context)
+
+		if user.Role == model.UserRoleAgent {
+			context.JSON(http.StatusBadRequest, gin.H{"error": "Not authorized to lock validation for level"})
+			return
+		}
+
+		levelID, err := uuid.Parse(context.Param("levelId"))
+
+		if err != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		var level model.Level
+
+		tx := db.Where("id = ?", levelID).First(&level)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if level.Validation != nil {
+			context.JSON(http.StatusBadRequest, gin.H{"error": "level is already validated"})
+			return
+		}
+
+		if level.ValidationLock.Before(time.Now().Add(time.Minute*15)) && user.ID != *level.ValidationAgentID {
+			context.JSON(http.StatusBadRequest, gin.H{"error": "is in lock by another agent"})
+			return
+		}
+
+		level.ValidationLock = time.Now()
+		level.ValidationAgentID = &user.ID
+
+		tx = db.Save(level)
+
+		if tx.Error != nil {
+			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
 		context.Status(http.StatusOK)

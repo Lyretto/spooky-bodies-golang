@@ -90,6 +90,7 @@ func GetJWTMiddleware(db *gorm.DB) (*jwt.GinJWTMiddleware, error) {
 					user = model.User{
 						PlatformType:   loginParams.PlatformType,
 						PlatformUserID: loginParams.PlatformUserID,
+						PlatformName:   "anonym",
 					}
 
 					tx = db.Where("platform_type = ?", loginParams.PlatformType).Clauses(clause.OnConflict{
