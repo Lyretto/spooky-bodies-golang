@@ -1,9 +1,15 @@
-FROM golang:1.20
+FROM golang:1.20-alpine3.17 AS builder
 
-WORKDIR /app
+WORKDIR /build
 
-COPY ./ .
+COPY ./ /build
 
-RUN go build -o build/spooky-server ./cmd
+RUN go build -o dist/spooky-server ./cmd
 
-ENTRYPOINT [ "/app/build/spooky-server" ]
+FROM alpine:3.17
+
+WORKDIR /opt/spooky-server
+
+COPY --from=builder /build/dist/spooky-server /opt/spooky-server/spooky-server
+
+ENTRYPOINT [ "/opt/spooky-server/spooky-server" ]
