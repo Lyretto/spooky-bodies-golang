@@ -36,14 +36,16 @@ func main() {
 		panic(err)
 	}
 
-	db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Level{},
 		&model.Vote{},
 		&model.Validation{},
 		&model.Report{},
 		&model.UserToken{},
-	)
+	); err != nil {
+		panic(err)
+	}
 
 	router := gin.New()
 

@@ -142,14 +142,13 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		validation := model.Validation{
-			LevelID:      levelID,
 			LevelVersion: level.Version,
 			Result:       validateParams.ValidationResult,
 			ValidatorID:  user.ID,
 		}
 
 		tx = db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "version"}, {Name: "level_id"}},
+			Columns:   []clause.Column{{Name: "version"}},
 			UpdateAll: true,
 		}).Create(&validation)
 
@@ -172,7 +171,7 @@ func levelValidate(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		level.Content = validateParams.Content
-		level.ValidationId = &validation.ID
+		level.Validation = &validation
 		level.AuthorScore = validateParams.AuthorScore
 		level.Thumbnail = validateParams.Thumbnail
 		level.Published = time.Now()

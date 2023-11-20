@@ -1,11 +1,9 @@
 services:
 
   spooky-server:
-    image: lyred/spooky-server
+    image: lyred/spooky-server:v0.1.0
     volumes:
-      - "./:/app:ro"
-      - "server_go_data:/go"
-    working_dir: "/app"
+      - "./config.yaml:/opt/spooky-server/config.yaml:ro"
     command: "go run ./cmd"
     restart: always
     ports:
@@ -27,10 +25,9 @@ services:
     image: adminer
     restart: always
     ports:
-      - "8080:8080"
+      - "9000:8080"
     depends_on:
       - db
 
 volumes:
   db_data:
-  server_go_data:
