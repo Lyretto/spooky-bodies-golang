@@ -1,0 +1,21 @@
+http:
+  middlewares:
+    spooky_server_api_stripprefix:
+      stripPrefix:
+        prefixes:
+          - "/api"
+
+  services:
+    spooky_server:
+      loadBalancer:
+        servers:
+          - url: http://spooky-server:3000/
+
+  routers:
+    spooky_server:
+      rule: "Host(`h3008396.stratoserver.net`) && PathPrefix(`/api`)"
+      tls:
+        certResolver: default_acme
+      service: spooky_server
+      middlewares:
+        - spooky_server_api_stripprefix

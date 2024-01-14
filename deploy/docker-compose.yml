@@ -4,10 +4,7 @@ services:
     image: lyred/spooky-server:v0.1.0
     volumes:
       - "./config.yaml:/opt/spooky-server/config.yaml:ro"
-    command: "go run ./cmd"
     restart: always
-    ports:
-      - "3000:3000"
     depends_on:
       - db
 
@@ -21,11 +18,22 @@ services:
     volumes:
       - "db_data:/var/lib/postgresql/data"
 
+  traefik:
+    image: traefik:v2.10.6
+    ports:
+      - "443:443"
+    volumes:
+      - "/etc/traefik/acme:/acme"
+      - "./traefik/traefik.yml:/etc/traefik/traefik.yml"
+      - "./traefik/providers:/etc/traefik/providers:ro"
+    depends_on:
+      - spooky-server
+
   adminer:
     image: adminer
     restart: always
     ports:
-      - "9000:8080"
+      - "8080:8080"
     depends_on:
       - db
 

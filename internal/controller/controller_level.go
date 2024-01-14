@@ -17,6 +17,7 @@ import (
 type levelParams struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
+	Replay  string `json:"replay"`
 }
 
 type levelGetParams struct {
@@ -247,9 +248,10 @@ func levelsAdd(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		level := model.Level{
-			User:    user,
-			Name:    levelAddParams.Name,
-			Content: levelAddParams.Content,
+			User:         user,
+			Name:         levelAddParams.Name,
+			Content:      levelAddParams.Content,
+			AuthorReplay: levelAddParams.Replay,
 		}
 
 		tx := db.Create(&level)
@@ -372,10 +374,20 @@ func levelsUpdate(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		level.Name = updateParams.Name
-		level.Content = updateParams.Content
+		if tx.RowsAffected == 0 {
+			context.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
 
-		tx = db.Save(&level)
+		updatedLevel := model.Level{
+			ID:           level.ID,
+			User:         level.User,
+			AuthorReplay: updateParams.Replay,
+			Name:         updateParams.Name,
+			Content:      updateParams.Content,
+		}
+
+		tx = db.Save(&updatedLevel)
 
 		if tx.Error != nil {
 			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -492,4 +504,5 @@ func UseLevel(router gin.IRouter, db *gorm.DB) {
 	levelRouter.PUT("/:levelId/reports", levelReport(db))
 	levelRouter.PUT("/:levelId/vote", levelVote(db))
 	levelRouter.PUT("/:levelId/validate", levelValidate(db))
+	levelRouter.PUT("/:levelId/lock", lockLevelValidation(db))
 }

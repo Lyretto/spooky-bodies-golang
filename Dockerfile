@@ -12,4 +12,4 @@ WORKDIR /opt/spooky-server
 
 COPY --from=builder /build/dist/spooky-server /opt/spooky-server/spooky-server
 
-ENTRYPOINT [ "/opt/spooky-server/spooky-server" ]
+CMD [ "/opt/spooky-server/spooky-server" ]

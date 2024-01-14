@@ -1,0 +1,14 @@
+entryPoints:
+  websecure:
+    address: ":443"
+
+certificatesResolvers:
+  default_acme:
+    acme:
+      tlsChallenge: {}
+      email: richardpschubert@gmail.com
+      storage: /acme/acme.json
+
+providers:
+  file:
+    directory: /etc/traefik/providers
